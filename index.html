@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Laporan Dryer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div id="app"></div>
+
+```
+<script>
+    let currentView = 'dashboard';
+    let currentRole = 'mandor';
+    let selectedMachine = '';
+    let reports = {};
+    let qcData = {};
+
+    // Load data
+    async function loadData() {
+        try {
+            const r = await window.storage.get('reports', false);
+            const q = await window.storage.get('qc', false);
+            if (r) reports = JSON.parse(r.value);
+            if (q) qcData = JSON.parse(q.value);
+        } catch (e) {}
+        render();
+    }
+
+    async function saveReport(key, data) {
+        reports[key] = data;
+        await window.storage.set('reports', JSON.stringify(reports), false);
+    }
+
+    async function saveQc(key, data) {
+        qcData[key] = data;
+        await window.storage.set('qc', JSON.stringify(qcData), false);
+    }
+
+    function render() {
+        const app = document.getElementById('app');
+        if (currentView === 'dashboard') {
+            app.innerHTML = renderDashboard();
+        } else if (currentView === 'input') {
+            app.innerHTML = renderInput();
+        } else if (currentView === 'qc') {
+            app.innerHTML = renderQc();
+        }
+        attachEventListeners();
+    }
+
+    function renderDashboard() {
+        const machines = ['D-01', 'D-02', 'D-03', 'D-04', 'D-05', 'D-06'];
+        const today = new Date().toISOString().split('T')[0];
+
+        let machineCards = '';
+        machines.forEach(m => {
+            const key = `${m}_${today}`;
+            const report = reports[key];
+            const qc = qcData[key];
+            
+            let color = 'bg-gray-400';
+            let status = 'Idle';
+            
+            if (report) {
+                color = 'bg-blue-500';
+                status = 'Running';
+            }
+            if (qc && qc.ok) {
+                color = 'bg-green-500';
+                status = 'OK';
+            }
+            if (qc && qc.warning) {
+                color = 'bg-red-500';
+                status = 'Warning';
+            }
+
+            machineCards += `
+                <div class="bg-white p-4 rounded-lg shadow cursor-pointer hover:shadow-lg" data-machine="${m}">
+                    <div class="flex justify-between mb-2">
+                        <span class="font-bold text-lg">${m}</span>
+                        <div class="w-3 h-3 rounded-full ${color}"></div>
+                    </div>
+                    <div class="text-sm text-gray-600">${status}</div>
+                    ${report ? `<div class="text-xs mt-1">Batch: ${report.batch || 0}/${report.target || 0}</div>` : ''}
+                    ${report ? `<div class="text-xs">Rendemen: ${report.rendemen || 0}%</div>` : ''}
+                </div>
+            `;
+        });
+
+        return `
+            <div class="p-4 max-w-6xl mx-auto">
+                <h1 class="text-3xl font-bold mb-6">Dashboard Dryer</h1>
+                
+                <div class="bg-blue-100 p-4 rounded-lg mb-6">
+                    <div class="font-semibold mb-2">Pilih Role:</div>
+                    <div class="flex gap-2">
+                        <button class="role-btn px-4 py-2 rounded ${currentRole === 'mandor' ? 'bg-blue-600 text-white' : 'bg-white'}" data-role="mandor">
+                            👷 Mandor
+                        </button>
+                        <button class="role-btn px-4 py-2 rounded ${currentRole === 'qc' ? 'bg-blue-600 text-white' : 'bg-white'}" data-role="qc">
+                            👨‍🏭 QC Pengawas
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    ${machineCards}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderInput() {
+        const today = new Date().toISOString().split('T')[0];
+        const key = `${selectedMachine}_${today}`;
+        const existing = reports[key] || {};
+
+        return `
+            <div class="p-4 max-w-2xl mx-auto">
+                <div class="flex justify-between mb-4">
+                    <h2 class="text-2xl font-bold">Laporan ${selectedMachine}</h2>
+                    <button id="backBtn" class="text-blue-600 font-semibold">← Kembali</button>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="font-bold mb-3">🛠 Mesin & Proses</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <input id="target" type="number" placeholder="Target Batch" value="${existing.target || ''}" class="border p-2 rounded w-full">
+                            <input id="press" type="number" placeholder="Press Time (mnt)" value="${existing.press || ''}" class="border p-2 rounded w-full">
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="font-bold mb-3">📦 Bahan</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <select id="bahan" class="border p-2 rounded">
+                                <option ${existing.bahan === 'OPC Jawa' ? 'selected' : ''}>OPC Jawa</option>
+                                <option ${existing.bahan === 'OPC Sengon' ? 'selected' : ''}>OPC Sengon</option>
+                            </select>
+                            <input id="tebal" placeholder="Tebal" value="${existing.tebal || ''}" class="border p-2 rounded">
+                            <select id="ukuran" class="border p-2 rounded">
+                                <option ${existing.ukuran === '2×4' ? 'selected' : ''}>2×4</option>
+                                <option ${existing.ukuran === '3×4' ? 'selected' : ''}>3×4</option>
+                                <option ${existing.ukuran === '4×4' ? 'selected' : ''}>4×4</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="font-bold mb-3">🌡 MC Basah</h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            <input id="mcL1" type="number" placeholder="L1" value="${existing.mcL1 || ''}" class="border p-2 rounded">
+                            <input id="mcL2" type="number" placeholder="L2" value="${existing.mcL2 || ''}" class="border p-2 rounded">
+                            <input id="mcL3" type="number" placeholder="L3" value="${existing.mcL3 || ''}" class="border p-2 rounded">
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="font-bold mb-3">📈 Produksi</h3>
+                        <div class="grid grid-cols-2 gap-3">
+                            <input id="bahanIn" type="number" placeholder="Bahan Tersedia" value="${existing.bahanIn || ''}" class="border p-2 rounded">
+                            <input id="hasilOut" type="number" placeholder="Hasil Dryer" value="${existing.hasilOut || ''}" class="border p-2 rounded">
+                            <input id="batch" type="number" placeholder="Batch" value="${existing.batch || ''}" class="border p-2 rounded">
+                            <input id="rendemen" placeholder="Rendemen %" readonly class="border p-2 rounded bg-gray-100">
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="font-bold mb-3">🌡 Suhu Platen (°C)</h3>
+                        <div class="grid grid-cols-3 gap-2">
+                            <input id="p1" type="number" placeholder="P1" value="${existing.p1 || ''}" class="border p-2 rounded">
+                            <input id="p8" type="number" placeholder="P8" value="${existing.p8 || ''}" class="border p-2 rounded">
+                            <input id="p15" type="number" placeholder="P15" value="${existing.p15 || ''}" class="border p-2 rounded">
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <h3 class="font-bold mb-3">🔍 QC Mandor (%)</h3>
+                        <div class="space-y-2">
+                            <div class="flex gap-2 items-center">
+                                <span class="w-20">MC 6-11</span>
+                                <input id="mc611" type="number" placeholder="%" value="${existing.mc611 || ''}" class="border p-2 rounded flex-1">
+                            </div>
+                            <div class="flex gap-2 items-center">
+                                <span class="w-20">MC 12-18</span>
+                                <input id="mc1218" type="number" placeholder="%" value="${existing.mc1218 || ''}" class="border p-2 rounded flex-1">
+                            </div>
+                            <div class="flex gap-2 items-center">
+                                <span class="w-20">MC ≥19</span>
+                                <input id="mc19" type="number" placeholder="%" value="${existing.mc19 || ''}" class="border p-2 rounded flex-1">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="saveBtn" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700">
+                        💾 Simpan Laporan
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderQc() {
+        const today = new Date().toISOString().split('T')[0];
+        const key = `${selectedMachine}_${today}`;
+        const report = reports[key];
+
+        if (!report) {
+            return `
+                <div class="p-4 max-w-2xl mx-auto">
+                    <button id="backBtn" class="text-blue-600 mb-4">← Kembali</button>
+                    <div class="text-center py-12 text-gray-500">Belum ada laporan dari Mandor</div>
+                </div>
+            `;
+        }
+
+        const existing = qcData[key] || {};
+
+        return `
+            <div class="p-4 max-w-2xl mx-auto">
+                <div class="flex justify-between mb-4">
+                    <h2 class="text-2xl font-bold">QC ${selectedMachine}</h2>
+                    <button id="backBtn" class="text-blue-600 font-semibold">← Kembali</button>
+                </div>
+
+                <div class="bg-blue-50 p-4 rounded-lg mb-6">
+                    <h3 class="font-bold mb-2">📋 Data Mandor</h3>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div><b>Bahan:</b> ${report.bahan || '-'}</div>
+                        <div><b>Tebal:</b> ${report.tebal || '-'}</div>
+                        <div><b>Batch:</b> ${report.batch || 0}/${report.target || 0}</div>
+                        <div><b>Rendemen:</b> ${report.rendemen || 0}%</div>
+                    </div>
+                </div>
+
+                <div class="space-y-3">
+                    ${['tebal', 'press', 'suhu', 'proses', 'batch', 'audit'].map((item, i) => {
+                        const labels = ['Tebal Bahan', 'Press Time', 'Suhu Platen', 'Status Proses', 'Per Batch', 'Audit Output'];
+                        const checked = existing[item] !== undefined ? existing[item] : true;
+                        return `
+                            <div class="bg-white p-3 rounded-lg shadow flex justify-between items-center">
+                                <span class="font-medium">${labels[i]}</span>
+                                <div class="flex gap-2">
+                                    <button class="qc-btn px-4 py-1 rounded ${checked ? 'bg-green-500 text-white' : 'bg-gray-200'}" data-item="${item}" data-value="true">✓</button>
+                                    <button class="qc-btn px-4 py-1 rounded ${!checked ? 'bg-red-500 text-white' : 'bg-gray-200'}" data-item="${item}" data-value="false">✗</button>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+
+                <button id="saveQcBtn" class="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 mt-4">
+                    ✅ Simpan QC
+                </button>
+            </div>
+        `;
+    }
+
+    function attachEventListeners() {
+        // Role buttons
+        document.querySelectorAll('.role-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentRole = btn.dataset.role;
+                render();
+            });
+        });
+
+        // Machine cards
+        document.querySelectorAll('[data-machine]').forEach(card => {
+            card.addEventListener('click', () => {
+                selectedMachine = card.dataset.machine;
+                currentView = currentRole === 'mandor' ? 'input' : 'qc';
+                render();
+            });
+        });
+
+        // Back button
+        const backBtn = document.getElementById('backBtn');
+        if (backBtn) {
+            backBtn.addEventListener('click', () => {
+                currentView = 'dashboard';
+                render();
+            });
+        }
+
+        // Save button (Input)
+        const saveBtn = document.getElementById('saveBtn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', async () => {
+                const bahanIn = document.getElementById('bahanIn').value;
+                const hasilOut = document.getElementById('hasilOut').value;
+                const rendemen = bahanIn && hasilOut 
+                    ? ((parseFloat(hasilOut) / parseFloat(bahanIn)) * 100).toFixed(1)
+                    : '0';
+
+                const today = new Date().toISOString().split('T')[0];
+                const key = `${selectedMachine}_${today}`;
+                
+                const data = {
+                    target: document.getElementById('target').value,
+                    press: document.getElementById('press').value,
+                    bahan: document.getElementById('bahan').value,
+                    tebal: document.getElementById('tebal').value,
+                    ukuran: document.getElementById('ukuran').value,
+                    mcL1: document.getElementById('mcL1').value,
+                    mcL2: document.getElementById('mcL2').value,
+                    mcL3: document.getElementById('mcL3').value,
+                    bahanIn,
+                    hasilOut,
+                    batch: document.getElementById('batch').value,
+                    p1: document.getElementById('p1').value,
+                    p8: document.getElementById('p8').value,
+                    p15: document.getElementById('p15').value,
+                    mc611: document.getElementById('mc611').value,
+                    mc1218: document.getElementById('mc1218').value,
+                    mc19: document.getElementById('mc19').value,
+                    rendemen
+                };
+
+                await saveReport(key, data);
+                alert('✅ Data tersimpan!');
+                currentView = 'dashboard';
+                render();
+            });
+
+            // Auto calculate rendemen
+            document.getElementById('bahanIn').addEventListener('input', updateRendemen);
+            document.getElementById('hasilOut').addEventListener('input', updateRendemen);
+        }
+
+        // QC buttons
+        document.querySelectorAll('.qc-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const item = btn.dataset.item;
+                const value = btn.dataset.value === 'true';
+                
+                const today = new Date().toISOString().split('T')[0];
+                const key = `${selectedMachine}_${today}`;
+                
+                if (!qcData[key]) qcData[key] = {};
+                qcData[key][item] = value;
+                
+                render();
+            });
+        });
+
+        // Save QC button
+        const saveQcBtn = document.getElementById('saveQcBtn');
+        if (saveQcBtn) {
+            saveQcBtn.addEventListener('click', async () => {
+                const today = new Date().toISOString().split('T')[0];
+                const key = `${selectedMachine}_${today}`;
+                const qc = qcData[key] || {};
+                
+                const allOk = qc.tebal !== false && qc.press !== false && qc.suhu !== false && 
+                              qc.proses !== false && qc.batch !== false && qc.audit !== false;
+                
+                qc.ok = allOk;
+                qc.warning = !allOk;
+                
+                await saveQc(key, qc);
+                alert('✅ QC tersimpan!');
+                currentView = 'dashboard';
+                render();
+            });
+        }
+    }
+
+    function updateRendemen() {
+        const bahanIn = document.getElementById('bahanIn').value;
+        const hasilOut = document.getElementById('hasilOut').value;
+        const rendemen = bahanIn && hasilOut 
+            ? ((parseFloat(hasilOut) / parseFloat(bahanIn)) * 100).toFixed(1)
+            : '0';
+        document.getElementById('rendemen').value = rendemen;
+    }
+
+    // Initialize
+    loadData();
+</script>
+```
+
+</body>
+</html>
